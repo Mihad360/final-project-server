@@ -38,21 +38,47 @@ async function run() {
       res.send({ token })
     })
 
-    const verifyToken = (req,res, next) => {
+    const verifyToken = (req, res, next) => {
       console.log(req.headers)
-      if(!req.headers.authorization){
-        return res.status(401).send({message: 'forbidden access'})
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'unauthorized domain' })
       }
       const token = req.headers.authorization.split(' ')[1]
       jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
-        if(err){
-          return res.status(401).send({message: 'forbidden access'})
+        if (err) {
+          return res.status(401).send({ message: 'unauthorized domain' })
         }
         req.decoded = decoded
         next()
       })
       // next()
     }
+
+    const verifyAdmin = async(req, res, next) => {
+      const email = req.decoded.email;
+      const query = {email: email}
+      const user = await usersCollection.findOne(query)
+      const isAdmin = user?.role === 'admin'
+      if(!isAdmin){
+        return res.status(403).send({message: 'forbidden access'})
+      }
+      next()
+    }
+
+    app.get('/users/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'forbidden access' })
+      }
+
+      const query = { email: email }
+      const user = await usersCollection.findOne(query)
+      let admin = false;
+      if (user) {
+        admin = user?.role === 'admin'
+      }
+      res.send({ admin })
+    })
 
     app.get('/menu', async (req, res) => {
       const result = await menuCollection.find().toArray();
@@ -77,7 +103,7 @@ async function run() {
       res.send(result)
     })
 
-    app.delete('/carts/:id', async (req, res) => {
+    app.delete('/carts/:id', verifyToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) }
       const result = await cartsCollection.deleteOne(query)
@@ -95,13 +121,13 @@ async function run() {
       res.send(result)
     })
 
-    app.get('/users',verifyToken, async (req, res) => {
-      
+    app.get('/users', verifyToken,verifyAdmin, async (req, res) => {
+
       const result = await usersCollection.find().toArray()
       res.send(result)
     })
 
-    app.patch('/users/admin/:id', async (req, res) => {
+    app.patch('/users/admin/:id', verifyToken,verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) }
       const updatedoc = {
@@ -113,10 +139,47 @@ async function run() {
       res.send(result)
     })
 
-    app.delete('/users/:id', async (req, res) => {
+    app.delete('/users/:id',verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) }
       const result = await usersCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    app.post('/menu',verifyToken, verifyAdmin, async(req, res) => {
+      const item = req.body;
+      const result = await menuCollection.insertOne(item)
+      res.send(result)
+    })
+
+    app.delete('/menu/:id',verifyToken, verifyAdmin, async(req, res) => {
+      const id = req.params.id;
+      const query = {_id: id}
+      const result = await menuCollection.deleteOne(query)
+      res.send(result)
+    })
+
+    app.get('/menu/:id', async(req, res) => {
+      const id = req.params.id;
+      const query = {_id: id}
+      const result = await menuCollection.findOne(query)
+      res.send(result)
+    })
+
+    app.patch('/menu/:id', async(req, res) => {
+      const item = req.body;
+      const id = req.params.id;
+      const filter = {_id:id}
+      const updatedoc = {
+        $set: {
+          name: item.name,
+          category: item.category,
+          price: item.price,
+          recipe: item.recipe,
+          image: item.image
+        }
+      }
+      const result = await menuCollection.updateOne(filter, updatedoc)
       res.send(result)
     })
 
